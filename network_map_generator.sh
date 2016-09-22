@@ -4,15 +4,42 @@
 export LAST
 export TMP_FILE
 declare -A RESULT_FILE
-mtr_stat_count=4
+mtr_stat_count=16
+
 ################################################################################
 # Define logging function
 INFO(){ echo -n "INFO: "; echo "$@"; }
+ERRO(){ echo -n "ERRO: "; echo -n "$@"; echo " Abort!"; exit 1; }
+
+################################################################################
+# Check deps
+if [ ! -f "$(whereis -b dot | cut -d' ' -f2)" ]; then
+    ERRO "dot binary are missing! Install graphviz!"
+fi
+
+if [ ! -f "$(whereis -b mtr | cut -d' ' -f2)" ]; then
+    ERRO "mtr binary are missing! Install mtr!"
+fi
+
+################################################################################
+# Parse args
+for i in "$@"; do
+    case $i in
+        MAP_NAME=*) MAP_NAME="${i//MAP_NAME=/}" ;;
+        HOSTS=*)    HOSTS="${i//HOSTS=/}"       ;;
+    esac
+done
+
+[ -z "$MAP_NAME" ] && ERRO "Missing arg: MAP_NAME=<map_name>"
+[ -z "$HOSTS" ] && ERRO "Missing arg: HOSTS=\"host1 host2...\""
 
 ################################################################################
 # Initialization
-RESULT_FILE[DOT]=new_map.dot
+RESULT_FILE[DOT]=$MAP_NAME
 INFO "Result dot file: ${RESULT_FILE[DOT]}"
+################################################################################
+# Destination host for L3 Network map
+hosts=( $HOSTS )
 
 ################################################################################
 # Define some function
@@ -20,7 +47,7 @@ mtr_w(){
     DEST_HOST="$1"
     mtr -w -r -c $mtr_stat_count "$DEST_HOST" | \
         tail -n +3 | \
-        awk '{print $1 $2}' | sed 's/.|--/.|/g'
+        awk '{print $1 $2}' | sed 's/.|--/|/g'
 }
 
 GEN_ROUTE_GRAPH(){
@@ -31,12 +58,9 @@ GEN_ROUTE_GRAPH(){
     done
     echo \"$LAST\" -- \"Target:'\n'$IP\"
 }
-################################################################################
-# Destination host for L3 Network map
-hosts=(
-    google.com vk.com github.com
-)
 
+################################################################################
+# main()
 TMP_FILE=$(mktemp)
 
 INFO "Gathering data"
@@ -47,7 +71,7 @@ for IP in "${hosts[@]}" ; do
 done
 
 echo
-INFO "Please wait for ~ ${mtr_stat_count}s"
+INFO "Please wait for ~ $((mtr_stat_count*2))s"
 wait
 
 ################################################################################
@@ -62,10 +86,8 @@ rm $TMP_FILE
 
 ################################################################################
 # Generate png/svg
-for dot_file in ./*.dot; do
-    BASENAME=$(basename $dot_file .dot)
-    INFO "Generate: $BASENAME.png"
-    dot $dot_file -Goverlap=false -Tpng -o $BASENAME.png
-    INFO "Generate: $BASENAME.svg"
-    dot $dot_file -Goverlap=false -Tsvg -o $BASENAME.svg
-done
+BASENAME=$(basename ${RESULT_FILE[DOT]} .dot)
+INFO "Generate: ${RESULT_FILE[DOT]}.png"
+dot ${RESULT_FILE[DOT]} -Goverlap=false -Tpng -o ${RESULT_FILE[DOT]}.png
+INFO "Generate: ${RESULT_FILE[DOT]}.svg"
+dot ${RESULT_FILE[DOT]} -Goverlap=false -Tsvg -o ${RESULT_FILE[DOT]}.svg
